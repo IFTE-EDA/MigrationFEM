@@ -1,0 +1,177 @@
+! FEM script used for analysis of the impact of effective charge number Z and heat of transport Qt.
+
+! To run this script, Z, Qt and the parameters listed in the table below have to be set before (e.g., in a wrapper script).
+
+! Run_ID	current	length	r	eff_r	k_Cu	k_ILD		t_Cu		t_ILD
+! 1		0.001	300	0.9	2.5	399	1.00E+20	1.00E-07	1.00E-07
+! 2		0.001	300	0.9	2.5	399	0.2		1.00E-07	1.00E-07
+
+
+t_end=972000
+t_ste=50
+
+*DEL,time_array
+*DIM,time_array,ARRAY,5
+time_array(1) = 1, 0.01*t_end, 0.02*t_end, 0.08*t_end, t_end
+
+/PREP7
+ET,1,SOLID226,100111,,,,,1,1    ! structural-electric-thermal diffusion
+
+SELTOL,1e-12
+
+toff=273                ! TEMPERATURE OFFSET FROM ABSOLUTE ZERO, deg C
+TOFFST,toff
+
+MPTEMP,1,0,20,50,70,100,200							! Temperatures for material parameter input (°C)
+
+MPDATA,RSVX,1,1, eff_r*1.54E-08, eff_r*1.69E-08, eff_r*1.91E-08, eff_r*2.05E-08, eff_r*2.27E-08, eff_r*3E-08 	! temp-dependent RESISTIVITY rho, Ohm-m -> Cu 
+
+
+MP,DXX,1,7.8e-5		! DIFFUSIVITY, m^2/s  
+MP,BETX,1,1             ! coef. of diffusion expansion for back stress  
+MP,CREF,1,1
+MP,REFT,1,100		! Refrence Temperature
+MP,EX,1,129.8e9         ! Young's modulus, Pa     
+MP,PRXY,1,0.34          ! Poisson's ratio
+
+! For constant resistivity (no temperature dependency)
+! MP,RSVX,1,eff_r*1.69e-8      ! Ohm-m 
+
+MP,KXX,1,k_Cu		! Thermal Conductivity
+MP,C,1,382		! Specific heat J/kg*K
+
+Z_EM=(1-r)*Z		! Z decreased by self-healing
+Ze=-Z_EM*1.6e-19        ! effective charge
+kB=1.3806e-23           ! Boltzmann constant, m^2*kg/(s^2*degK)
+Va=1.18e-29             ! atomic volume, m^3  
+k_eV=8.61733e-5 	! Boltzmann's constant, eV/K
+
+Ea=0.6			! Activation Energy, eV
+
+
+! Migration Atoms
+TB,MIGR,1
+TBDATA,1,Ea/k_eV	
+TBDATA,2,Va/kB
+tbdata,3,Qt/k_eV
+TBDATA,4,Ze/kB
+
+
+
+! 3D - Block
+
+h=1e-7                    ! HEIGHT, m
+l=h*length                ! LENGTH, m
+w=h
+!SEG
+BLOCK,0,l,0,w,0,h
+VSEL,ALL ! select according to metlayers?
+ESIZE,2*h
+VSEL,ALL
+MSHKEY,0
+MSHAPE,1,3D
+VMESH,ALL
+
+
+/VIEW,1,1,1,1
+/VUP,1,Z
+/ANGLE,1,180,ZM,0
+EPLOT
+/IMAGE,SAVE,'mesh_TM',png
+ALLSEL
+
+! Ground
+NSEL,S,LOC,X,0,0
+D,ALL,VOLT,0
+F,NDNEXT(0),AMPS,-current
+
+ALLSEL,ALL
+! Current
+NSEL,S,LOC,X,l
+CP,NEXT,VOLT,ALL
+F,NDNEXT(0),AMPS,current  
+
+
+
+ALLSEL,ALL
+! Temperatur
+t=100                  ! TEMPERATURE, deg C
+ALLSEL,ALL
+NSEL,S,LOC,X,0,0
+D,ALL,TEMP,t		
+NSEL,S,LOC,X,l
+D,ALL,TEMP,100
+
+
+ALLSEL,ALL
+!ASEL,ALL,EXT
+!ASEL,U,LOC,X,0
+!ASEL,U,LOC,X,l
+ASEL,S,LOC,Z,0
+SFA,ALL,,CONV,k_ILD/t_ILD,100		! convection to dielectric
+!SFA,ALL,,CONV,1e20,100 		! use for TM (Joule heating) deactivation
+
+
+
+! Displacement
+ALLSEL
+D,ALL,UX,0
+D,ALL,UY,0
+D,ALL,UZ,0
+FINISH
+
+/SOLU
+ANTYPE,TRANS
+ALLSEL,ALL
+IC,ALL,CONC,1
+NSEL,ALL
+
+NLGEOM,ON
+OUTRES,ALL,ALL
+AUTOTS,OFF
+
+KEYW,pr_sgui,1  ! Disables Solution is done
+TIME,t_end
+NSUBST,t_ste
+SOLVE
+FINISH
+
+!Number format
+/GFORMAT,F,12,2
+! White Background
+/RGB,INDEX,100,100,100, 0
+/RGB,INDEX, 80, 80, 80,13
+/RGB,INDEX, 60, 60, 60,14
+/RGB,INDEX, 0, 0, 0,15
+!export all parameters to file.param
+PARSAV,ALL,file,parm
+!To smooth contour, make sure to start ansys in win32c
+/CONTOUR,ALL,128
+!Should display location number, but remove element border
+/PNUM,LOC,1
+! min max in plot
+/PLOPTS,MINM,0
+! x,y,z axis
+/TRIAD,RBOT
+
+! write results to text file
+FINISH
+/POST1
+/SHOW,,,0,
+/VIEW,1,1,1,1
+/VUP,1,Z
+/ANGLE,1,180,ZM,0
+SET,LAST
+PLNSOL,NL,HPRES
+*GET,ParMax,PLNSOL,0,MAX 		
+*GET,ParMin,PLNSOL,0,MIN
+*CFOPEN,'max_TM',txt,,APPEND
+*VWRITE,Run_ID,Z,Qt,ParMax,ParMin
+%15.2F %15.2F %15.10F %15.2F %15.2F
+*CFCLOS
+/ERASE
+FINISH
+
+/CLEAR,NOSTART
+
+/EOF

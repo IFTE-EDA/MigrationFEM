@@ -1,0 +1,270 @@
+! Example of how to simulate a more complex interconnect structure
+
+*DEL,job
+*DIM,job,STRING,80
+*DIM,geoname,STRING,80
+job(1) = 'TM_in_signal_nets'
+geoname(1) = 'TM_in_signal_nets'
+/TITLE, 'TM_in_signal_nets'
+/FILNAME, 'TM_in_signal_nets'
+
+t_end=972000
+t_ste=30
+
+Run_ID = 1
+length =  100
+eff_r = 2.5
+k_Cu = 399.0
+k_ILD = 0.2
+t_Cu = 1e-07
+t_ILD = 1e-07
+r = 0.9			! Self-Healing
+Z = 5
+Qt = 0.5		! heat of transport, eV
+
+
+*DEL,time_array
+*DIM,time_array,ARRAY,5
+time_array(1) = 1, 0.01*t_end, 0.02*t_end, 0.08*t_end, t_end
+
+/PREP7
+ET,1,SOLID226,100111,,,,,1,1    ! structural-electric-thermal diffusion
+
+SELTOL,1e-12
+
+
+toff=273                ! TEMPERATURE OFFSET FROM ABSOLUTE ZERO, deg C
+TOFFST,toff
+
+MPTEMP,1,0,20,50,70,100,200							! Temperatures for material parameter input (°C)
+
+MPDATA,RSVX,1,1, eff_r*1.54E-08, eff_r*1.69E-08, eff_r*1.91E-08, eff_r*2.05E-08, eff_r*2.27E-08, eff_r*3E-08 	! temp-dependent RESISTIVITY rho, Ohm-m -> Cu 
+
+
+MP,DXX,1,7.8e-5		! DIFFUSIVITY, m^2/s  
+MP,BETX,1,1             ! coef. of diffusion expansion for back stress  
+MP,CREF,1,1
+MP,REFT,1,100		! Reference Temperature
+MP,EX,1,129.8e9         ! Young's modulus, Pa     
+MP,PRXY,1,0.34          ! Poisson's ratio
+! MP,RSVX,1,eff_r*2.27E-08      ! RESISTIVITY rho, Ohm-m (no temperature dependency)
+
+MP,KXX,1,k_Cu		! Thermal Conductivity
+MP,C,1,382		! Specific heat  J/kg*K
+
+Z_EM=(1-r)*Z		! Z decreased by self-healing
+Ze=-Z_EM*1.6e-19        ! effective charge, C  
+kB=1.3806e-23           ! Boltzmann constant, m^2*kg/(s^2*degK)
+Va=1.18e-29             ! atomic volume, m^3  Cu
+k_eV=8.61733e-5		! Boltzmann's constant, eV/K
+
+Ea=0.6			! Activation Energy, eV		
+
+! Migration Atoms
+TB,MIGR,1
+TBDATA,1,Ea/k_eV	
+TBDATA,2,Va/kB
+tbdata,3,Qt/k_eV
+TBDATA,4,Ze/kB
+
+
+
+! 3D - Block
+
+h=t_Cu                   ! HEIGHT, m
+l=h*length                ! LENGTH, m
+w=h
+
+BLOCK,0,l,0,w,0,h
+Block,0.2*l,0.2*l+h,w,0.2*l,0,h
+Block,0.6*l,0.6*l+h,-0.3*l,0,0,h
+!VIAS
+BLOCK,0,h,0,h,-h,0
+BLOCK,0.2*l,0.2*l+h,0.2*l-h,0.2*l,-h,0
+BLOCK,0.6*l,0.6*l+h,-0.3*l,-0.3*l+h,-h,0
+BLOCK,l-h,l,0,h,-h,0
+VSEL,ALL 
+VADD,ALL
+ESIZE,h
+VSEL,ALL
+MSHKEY,0
+MSHAPE,1,3D
+VMESH,ALL
+
+
+/VIEW,1,1,1,1
+/VUP,1,Z
+/ANGLE,1,180,ZM,0
+EPLOT
+/IMAGE,SAVE,'mesh_TM',png
+ALLSEL
+
+! Ground
+NSEL,S,LOC,X,0.2*l,0.2*l+h
+NSEL,R,LOC,Y,0.2*l-h,0.2*l
+NSEL,R,LOC,Z,-h
+D,ALL,VOLT,0
+F,NDNEXT(0),AMPS,0.001
+
+ALLSEL,ALL
+! Current
+NSEL,S,LOC,X,0,h
+NSEL,R,LOC,Y,0,h
+NSEL,R,LOC,Z,-h
+CP,NEXT,VOLT,ALL
+F,NDNEXT(0),AMPS,-0.0005
+
+ALLSEL,ALL
+NSEL,S,LOC,X,l-h,l
+NSEL,R,LOC,Y,0,h
+NSEL,R,LOC,Z,-h
+CP,NEXT,VOLT,ALL
+F,NDNEXT(0),AMPS,-0.0003
+
+ALLSEL,ALL
+NSEL,S,LOC,X,0.6*l,0.6*l+h
+NSEL,R,LOC,Y,-0.3*l,-0.3*l+h
+NSEL,R,LOC,Z,-h
+CP,NEXT,VOLT,ALL
+F,NDNEXT(0),AMPS,-0.0002
+
+ALLSEL,ALL
+! Temperatur
+t=100                  ! TEMPERATURE, deg C
+ALLSEL,ALL
+NSEL,S,LOC,Z,-h
+D,ALL,TEMP,t		! constant temperature at via
+
+
+
+ALLSEL,ALL
+
+ASEL,S,LOC,Z,h
+SFA,ALL,,CONV,k_ILD/t_ILD,100		! convection to dielectric
+! SFA,ALL,,CONV,1e20,100 	! use for TM deactivation
+
+
+
+! Displacement
+ALLSEL
+D,ALL,UX,0
+D,ALL,UY,0
+D,ALL,UZ,0
+FINISH
+
+/SOLU
+ANTYPE,TRANS
+ALLSEL,ALL
+IC,ALL,CONC,1
+NSEL,ALL
+
+NLGEOM,ON
+OUTRES,ALL,ALL
+AUTOTS,OFF
+
+KEYW,pr_sgui,1  ! Disables Solution is done
+TIME,t_end
+NSUBST,t_ste
+SOLVE
+FINISH
+
+!Number format
+/GFORMAT,F,12,2
+! White Background
+/RGB,INDEX,100,100,100, 0
+/RGB,INDEX, 80, 80, 80,13
+/RGB,INDEX, 60, 60, 60,14
+/RGB,INDEX, 0, 0, 0,15
+!export all parameters to file.param
+PARSAV,ALL,file,parm
+!To smooth contour, make sure to start ansys in win32c
+/CONTOUR,ALL,128
+!Should display location number, but remove element border 
+/PNUM,LOC,1
+! min max in plot
+/PLOPTS,MINM,0
+! x,y,z axis
+/TRIAD,RBOT
+
+FINISH
+
+/POST1
+/AXLAB,X,x (m)
+/AXLAB,Y, Hydrostatic stress(Pa)
+PATH,x_axis,2,,100
+PPATH,1,,0,0,0
+PPATH,2,,l,0,0
+/XRANGE,0,l
+/YRANGE,-400e6,400e6
+/GROPT,DIVY,4
+
+*DO, ti, 1, 5, 1
+    SET,,,,,time_array(ti)
+    color=ti*2+2
+    /COLOR,CURVE,color
+    PDEF,time_array(ti),NL,HPRES ,AVG
+    PLPATH,time_array(ti)
+
+    PAGET,datash,TABLE
+    ! x, y, z, s, sh -> s...length, sh...stress_hydro
+    *MWRITE,datash,'sh_x_axis_%job(1)%_t%ti%_%time_array(ti)%_x_y_z_s_sh',txt
+    %15.10F %15.10F %15.10F %15.10F %15.2F
+
+    PDEF,time_array(ti),TEMP
+    PLPATH,time_array(ti)
+
+    PAGET,datatemp,TABLE
+    ! x, y, z, s, sh -> s...length, sh...stress_hydro
+    *MWRITE,datatemp,'temp_x_axis_%job(1)%_t%ti%_%time_array(ti)%_x_y_z_s_sh',txt
+    %15.10F %15.10F %15.10F %15.10F %15.2F
+
+    PDEF,time_array(ti),VOLT
+    PLPATH,time_array(ti)
+
+    PAGET,datav,TABLE
+    ! x, y, z, s, sh -> s...length, sh...stress_hydro
+    *MWRITE,datav,'v_x_axis_%job(1)%_t%ti%_%time_array(ti)%_x_y_z_s_sh',txt
+    %15.10F %15.10F %15.10F %15.10F %15.10F
+
+    !%15.2E %15.2E %15.2E %15.2E %15.2E -> Alternative to F must be right after
+    !mwrite-> no comment inbetween. E can represent 0 as 2.12E-21 due to rounding
+    ! F is good because it rounds
+
+    /NOERASE
+*ENDDO
+
+/POST1
+/SHOW,,,0,
+/VIEW,1,1,1,1
+/VUP,1,Z
+/ANGLE,1,180,ZM,0
+SET,LAST
+PLNSOL,NL,HPRES
+*GET,ParMax,PLNSOL,0,MAX
+*GET,ParMin,PLNSOL,0,MIN
+FINISH
+
+NSEL,S,NL,HPRES,ParMax
+*GET,XMAX,NODE,NDNEXT(0),LOC,X
+*GET,YMAX,NODE,NDNEXT(0),LOC,Y
+*GET,ZMAX,NODE,NDNEXT(0),LOC,Z
+
+NSEL,S,NL,HPRES,ParMin,ParMin
+*GET,XMIN,NODE,NDNEXT(0),LOC,X
+*GET,YMIN,NODE,NDNEXT(0),LOC,Y
+*GET,ZMIN,NODE,NDNEXT(0),LOC,Z
+
+*CFOPEN,'%geoname(1)%_output',txt,,APPEND
+*VWRITE,  XMAX, YMAX, ZMAX
+%15.13F %15.13F %15.13F
+*VWRITE,ParMax
+%15.2F 
+*VWRITE,  XMIN, YMIN, ZMIN
+%15.13F %15.13F %15.13F
+*VWRITE,ParMin
+%15.2F 
+*CFCLOS
+
+!/CLEAR,NOSTART
+
+/EOF

@@ -72,7 +72,8 @@ TBDATA,4,Ze/kB
 
 ! 3D - Block
 l=t_Cu*length                ! LENGTH, m
-w=h
+w=t_Cu
+h=t_Cu
 BLOCK,0,l,0,w,0,h
 
 ! MESH 
